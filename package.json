@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "generate-excel": "node scripts/generate-excel.cjs"
   },
   "dependencies": {
     "chart.js": "^4.4.1",
@@ -17,6 +18,7 @@
     "@types/react": "^18.3.1",
     "@types/react-dom": "^18.3.1",
     "@vitejs/plugin-react": "^4.3.1",
-    "vite": "^5.4.1"
+    "vite": "^5.4.1",
+    "xlsx": "^0.18.5"
   }
 }
