@@ -1,4 +1,3 @@
-@'
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 
@@ -17,4 +16,3 @@ export default defineConfig({
     }
   }
 })
-'@ | Set-Content vite.config.js -Encoding UTF8
