@@ -484,22 +484,57 @@ export default function Dashboard() {
           </div>
         </div>
         <div className="sec">
-          <div className="sh"><h2>Key Highlights</h2></div>
-          <div className="hlg">
-            {(apiData?.highlights || [
-              { bg: 'var(--hl-t)', icon: '🚀', title: 'Scaling ahead of the curve', body: '31% of eligible contracts scaled, outperforming the Tech benchmark of 26%.' },
-              { bg: 'var(--hl-p)', icon: '📈', title: 'Adoption at scale', body: '72% of APAC contracts live on GenAI / Agentic AI — ahead of the 55% Tech average.' },
-              { bg: 'var(--hl-g)', icon: '⚡', title: 'Proven productivity impact', body: 'Average gains: 3.8% in AMS/IMS and 6.6% in SI engagements.' },
-              { bg: 'var(--hl-a)', icon: '🏗️', title: 'AI Hub by design', body: 'Dedicated AI Hub of ~60 architects and engineers (currently 32, 40 by mid-May).' },
-              { bg: 'var(--hl-p)', icon: '🌏', title: 'Pilots to scale', body: '34 AI success stories across 31 APAC clients — NBN, QBE, CLP Holdings, AMPOL, Singapore CPFB.' },
-              { bg: 'var(--hl-t)', icon: '💰', title: 'GenERA outperformance', body: '$55.5M actuals vs $39M planned — 42% beat. FTE savings 57% above plan.' },
-            ]).map(h => (
-              <div className="hlc" key={h.title}>
-                <div className="hli" style={{ background: h.bg }}>{h.icon}</div>
-                <div><div className="hlt">{h.title}</div><div className="hlb">{h.body}</div></div>
+          <div className="sh"><h2>Performance Summary</h2></div>
+          {(() => {
+            const ov   = apiData?.ovData?.[ovView]   || OV_DATA[ovView]
+            const vd   = apiData?.data?.[ovView]     || DATA[ovView]
+            const rows = vd.rows || []
+            const adopt  = ov.adopt[0], scale  = ov.adopt[1], elig = ov.adopt[5]
+            const geraAct= ov.sav[0],   geraPln= ov.sav[1],   fteAct= ov.sav[2]
+            const genAIAct= ov.sav[4]
+            const hi  = v => <strong style={{ color:'var(--purple)', fontWeight:600 }}>{v}</strong>
+            const pos = v => <strong style={{ color:'var(--teal)',   fontWeight:600 }}>{v}</strong>
+            const neg = v => <strong style={{ color:'var(--red)',    fontWeight:600 }}>{v}</strong>
+            const label = ovView.toUpperCase()
+
+            const adoptNum  = parseInt(String(adopt.v))
+            const scaleNum  = parseInt(String(scale.v))
+            const adoptVsTgt = adoptNum - 70
+            const scaleVsBmk = scaleNum - 26
+
+            const topAdoptMU = [...rows].sort((a,b) => b.adopt - a.adopt)[0]
+            const topSavMU   = [...rows].filter(r => r.geraAct && r.geraAct !== '—')
+              .sort((a,b) => parseFloat((b.geraAct||'').replace(/[^0-9.]/g,'')) - parseFloat((a.geraAct||'').replace(/[^0-9.]/g,'')))[0]
+
+            const sentences = [
+              <p key="adopt" style={{ margin:0 }}>
+                {label} achieved {hi(adopt.v)} adoption across {hi(String(elig.v))} eligible contracts —{' '}
+                {adoptVsTgt >= 0
+                  ? <>{pos(adoptVsTgt + 'pp ahead')} of the 70% target</>
+                  : <>{neg(Math.abs(adoptVsTgt) + 'pp behind')} the 70% target</>}.{' '}
+                Agentic AI scaling reached {hi(scale.v)},{' '}
+                {scaleVsBmk >= 0
+                  ? <>{pos(scaleVsBmk + 'pp above')} the 26% Tech benchmark</>
+                  : <>{neg(Math.abs(scaleVsBmk) + 'pp below')} the 26% Tech benchmark</>}.
+              </p>,
+              <p key="gera" style={{ margin:0 }}>
+                GenERA productivity savings stand at {pos(geraAct.v)} against {geraPln.v} planned
+                {geraAct.d ? <> — a {pos(geraAct.d)} beat</> : ''}.{' '}
+                FTE savings reached {pos(fteAct.v)}{fteAct.d ? <>, {pos(fteAct.d)} vs plan</> : ''}.
+              </p>,
+              <p key="genai" style={{ margin:0 }}>
+                GenAI delivery savings reached {hi(genAIAct.v)}{genAIAct.d ? <> ({genAIAct.d})</> : ''}.
+                {topAdoptMU ? <> {hi(topAdoptMU.mu)} leads on adoption at {topAdoptMU.adopt}%{topAdoptMU.geraAct && topAdoptMU.geraAct !== '—' ? <>, with {pos(topAdoptMU.geraAct)} GenERA actuals</> : ''}.</> : ''}
+                {topSavMU && topSavMU.mu !== topAdoptMU?.mu ? <> {hi(topSavMU.mu)} leads on GenERA savings at {pos(topSavMU.geraAct)}.</> : ''}
+              </p>,
+            ]
+
+            return (
+              <div style={{ background:'var(--surface)', border:'1px solid var(--border)', borderRadius:10, padding:'20px 24px', display:'flex', flexDirection:'column', gap:14, fontSize:14.5, lineHeight:1.75, color:'var(--text2)' }}>
+                {sentences}
               </div>
-            ))}
-          </div>
+            )
+          })()}
         </div>
       </div>
 
@@ -672,19 +707,6 @@ export default function Dashboard() {
               <div className="li"><div className="ld" style={{ background: 'var(--teal)' }} />Realized</div>
             </div>
             <div className="cw" style={{ height: 420 }}><canvas id="topClientChart" /></div>
-          </div>
-        </div>
-        <div className="sec">
-          <div className="sh"><h2>Productivity benchmarks</h2></div>
-          <div className="kg">
-            {(apiData?.benchmarks || [
-              { c: 'ct', l: 'AMS/IMS Productivity',  v: '3.8%',  s: 'Average APAC AMS/IMS' },
-              { c: 'cp', l: 'SI Productivity',        v: '6.6%',  s: 'Average APAC SI' },
-              { c: 'cg', l: 'Maybank GHCP Story Pts', v: '+36%',  s: 'Story points per hour' },
-              { c: 'ca', l: 'Maybank Unit Tests',     v: '+59%',  s: 'Test cases per hour' },
-              { c: 'ct', l: 'UBE RICEF FTE Saving',  v: '7 FTE', s: '900 RICEF in 25 days' },
-              { c: 'cp', l: 'Highmark Use Cases',     v: '18',    s: '100% in production' },
-            ]).map((k, i) => <KpiCard key={i} {...k} />)}
           </div>
         </div>
       </div>
