@@ -1,6 +1,6 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Chart, registerables } from 'chart.js'
-import CONTRACTS from './data/contracts.json'
+import CONTRACTS_FALLBACK from './data/contracts.json'
 
 Chart.register(...registerables)
 
@@ -268,15 +268,25 @@ export default function Dashboard() {
   const [muView, setMuView] = useState('apac')
   const [savView, setSavView] = useState('apac')
   const [activeMU, setActiveMU] = useState(null)
+  const [apiData, setApiData] = useState(null)
   const charts = useRef({})
+
+  // Fetch live data from Azure Function
+  useEffect(() => {
+    fetch('/api/dashboard-data')
+      .then(r => r.ok ? r.json() : null)
+      .then(d => { if (d && !d.error) setApiData(d) })
+      .catch(() => {})
+  }, [])
 
   // Apply theme to <html>
   useEffect(() => { document.documentElement.dataset.theme = 'light' }, [])
 
-  // Rebuild charts when view or theme changes
-  useEffect(() => { setTimeout(buildOverviewCharts, 50) }, [ovView, theme, activeTab])
-  useEffect(() => { setTimeout(buildMUCharts, 50) }, [muView, theme, activeTab])
-  useEffect(() => { setTimeout(() => { buildSavCharts(); buildClientsChart() }, 50) }, [savView, theme, activeTab])
+  // Rebuild charts when view, theme, or data changes
+  useEffect(() => { setTimeout(buildOverviewCharts, 50) }, [ovView, theme, activeTab, apiData])
+  useEffect(() => { setTimeout(buildMUCharts, 50) }, [muView, theme, activeTab, apiData])
+  useEffect(() => { setTimeout(() => { buildSavCharts(); buildClientsSavChart() }, 50) }, [savView, theme, activeTab, apiData])
+  useEffect(() => { setTimeout(buildTopClientsChart, 50) }, [activeTab, apiData])
 
   function mkChart(id, cfg) {
     const el = document.getElementById(id)
@@ -287,18 +297,18 @@ export default function Dashboard() {
 
   function buildOverviewCharts() {
     const c = chartColors()
-    const apacAdopt = [67, 77, 83, 53, 36], apacScale = [31, 32, 38, 19, 0]
-    const atciAdopt = [65, 54, 100, 62, 100], atciScale = [39, 23, 43, 38, 0]
-    const adopt = ovView === 'apac' ? apacAdopt : atciAdopt
-    const scale = ovView === 'apac' ? apacScale : atciScale
+    const liveRows = apiData?.data?.[ovView]?.rows
+    const adopt = liveRows ? liveRows.map(r => r.adopt) : (ovView === 'apac' ? [67, 77, 83, 53, 36] : [65, 54, 100, 62, 100])
+    const scale = liveRows ? liveRows.map(r => r.scale) : (ovView === 'apac' ? [31, 32, 38, 19, 0]  : [39, 23, 43, 38, 0])
+    const donut = apiData?.ovData?.[ovView]?.donut || [36, 31, 15, 14]
     mkChart('adoptionBar', {
       type: 'bar',
       data: {
         labels: MU_LABELS,
         datasets: [
           { label: 'Adoption %', data: adopt, backgroundColor: c.p, borderRadius: 4 },
-          { label: 'Scaling %', data: scale, backgroundColor: c.t, borderRadius: 4 },
-          { label: 'Target 70%', data: [70, 70, 70, 70, 70], backgroundColor: c.aA, borderColor: c.a, borderWidth: 1, borderRadius: 4 },
+          { label: 'Scaling %',  data: scale, backgroundColor: c.t, borderRadius: 4 },
+          { label: 'Target 70%', data: [70,70,70,70,70], backgroundColor: c.aA, borderColor: c.a, borderWidth: 1, borderRadius: 4 },
         ],
       },
       options: { ...baseOpts(), scales: { ...baseOpts().scales, y: { ...baseOpts().scales.y, max: 110, ticks: { ...baseOpts().scales.y.ticks, callback: v => v + '%' } } } },
@@ -307,14 +317,14 @@ export default function Dashboard() {
       type: 'doughnut',
       data: {
         labels: ['Scaling', 'WIP', 'Not Impl.', 'Yet to Start'],
-        datasets: [{ data: [36, 31, 15, 14], backgroundColor: [c.t, c.p, c.gray, c.a], borderWidth: 0, hoverOffset: 4 }],
+        datasets: [{ data: donut, backgroundColor: [c.t, c.p, c.gray, c.a], borderWidth: 0, hoverOffset: 4 }],
       },
       options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, cutout: '68%' },
     })
   }
 
   function buildMUCharts() {
-    const c = chartColors(), d = DATA[muView], mCb = v => '$' + v + 'M'
+    const c = chartColors(), d = apiData?.data?.[muView] || DATA[muView], mCb = v => '$' + v + 'M'
     mkChart('muSavChart', {
       type: 'bar',
       data: { labels: MU_LABELS, datasets: [{ label: 'Plan $M', data: d.savPlan, backgroundColor: c.pA, borderRadius: 3 }, { label: 'Actuals $M', data: d.savActuals, backgroundColor: c.t, borderRadius: 3 }] },
@@ -328,7 +338,7 @@ export default function Dashboard() {
   }
 
   function buildSavCharts() {
-    const c = chartColors(), d = DATA[savView], mCb = v => '$' + v + 'M'
+    const c = chartColors(), d = apiData?.data?.[savView] || DATA[savView], mCb = v => '$' + v + 'M'
     mkChart('savCompare', {
       type: 'bar',
       data: { labels: MU_LABELS, datasets: [{ label: 'GenERA $M', data: d.savActuals, backgroundColor: c.t, borderRadius: 4 }, { label: 'GenAI $M', data: d.delActuals, backgroundColor: c.p, borderRadius: 4 }] },
@@ -341,34 +351,67 @@ export default function Dashboard() {
     })
   }
 
-  function buildClientsChart() {
+  function buildClientsSavChart() {
     const c = chartColors()
-    if (savView === 'apac') {
+    const clients = apiData?.clientsChart
+    if (savView === 'apac' && clients?.length) {
       mkChart('savClients', {
         type: 'bar',
         data: {
-          labels: ['MIZUHO', 'QBE', 'NBN', 'PTT', 'IDEMITSU', 'RIO TINTO', 'TORAY', 'STD CHAR.', 'TOKYO ELEC.', 'SUMITOMO', 'HIGHMARK', 'DIC AMS', 'SINGAPORE CS', 'KANSAI ELEC.', 'AMPOL'],
+          labels: clients.map(x => x.client.substring(0, 14).toUpperCase()),
           datasets: [
-            { label: 'Planned $K', data: [270, 201, 115.5, 254.3, 110.4, 0, 134.2, 55, 30.7, 85.9, 27.9, 68.4, 40.4, 15.6, 0], backgroundColor: c.pA, borderRadius: 3 },
-            { label: 'Realized $K', data: [180, 167.8, 78.1, 103.2, 82.8, 213.3, 67.9, 64.5, 20.2, 85.9, 25.2, 51.4, 31.3, 11.8, 1], backgroundColor: c.t, borderRadius: 3 },
+            { label: 'Planned $K',  data: clients.map(x => x.planned),  backgroundColor: c.pA, borderRadius: 3 },
+            { label: 'Realized $K', data: clients.map(x => x.realized), backgroundColor: c.t,  borderRadius: 3 },
           ],
         },
-        options: { ...baseOpts(), scales: { ...baseOpts().scales, x: { ticks: { color: chartColors().tx, font: { size: 10 }, maxRotation: 40 }, grid: { color: chartColors().gr } }, y: { ticks: { color: chartColors().tx, font: { size: 11 }, callback: v => '$' + v + 'K' }, grid: { color: chartColors().gr } } } },
+        options: { ...baseOpts(), scales: { ...baseOpts().scales, x: { ticks: { color: c.tx, font: { size: 10 }, maxRotation: 40 }, grid: { color: c.gr } }, y: { ticks: { color: c.tx, font: { size: 11 }, callback: v => '$' + v + 'K' }, grid: { color: c.gr } } } },
       })
-    } else {
+    } else if (savView === 'apac') {
       mkChart('savClients', {
         type: 'bar',
-        data: { labels: ['GenAI Savings', 'GenERA Savings'], datasets: [{ label: 'Plan $M', data: [2.6, 11.7], backgroundColor: c.aA, borderColor: c.a, borderWidth: 1, borderRadius: 4 }, { label: 'Actuals $M', data: [2.0, 13.9], backgroundColor: c.t, borderRadius: 4 }] },
+        data: {
+          labels: ['MIZUHO','QBE','NBN','PTT','IDEMITSU','RIO TINTO','TORAY','STD CHAR.','TOKYO ELEC.','SUMITOMO','HIGHMARK','DIC AMS','SINGAPORE CS','KANSAI ELEC.','AMPOL'],
+          datasets: [
+            { label: 'Planned $K',  data: [270,201,115.5,254.3,110.4,0,134.2,55,30.7,85.9,27.9,68.4,40.4,15.6,0],       backgroundColor: c.pA, borderRadius: 3 },
+            { label: 'Realized $K', data: [180,167.8,78.1,103.2,82.8,213.3,67.9,64.5,20.2,85.9,25.2,51.4,31.3,11.8,1], backgroundColor: c.t,  borderRadius: 3 },
+          ],
+        },
+        options: { ...baseOpts(), scales: { ...baseOpts().scales, x: { ticks: { color: c.tx, font: { size: 10 }, maxRotation: 40 }, grid: { color: c.gr } }, y: { ticks: { color: c.tx, font: { size: 11 }, callback: v => '$' + v + 'K' }, grid: { color: c.gr } } } },
+      })
+    } else {
+      const d = apiData?.data?.atci || DATA.atci
+      mkChart('savClients', {
+        type: 'bar',
+        data: { labels: ['GenAI Savings','GenERA Savings'], datasets: [{ label: 'Plan $M', data: [d.stats?.delplan?.replace(/[^0-9.]/g,'') || 2.6, d.stats?.gplan?.replace(/[^0-9.]/g,'') || 11.7], backgroundColor: c.aA, borderColor: c.a, borderWidth: 1, borderRadius: 4 }, { label: 'Actuals $M', data: [d.stats?.delact?.replace(/[^0-9.]/g,'') || 2.0, d.stats?.gera?.replace(/[^0-9.]/g,'') || 13.9], backgroundColor: c.t, borderRadius: 4 }] },
         options: baseOpts(v => '$' + v + 'M'),
       })
     }
+  }
+
+  function buildTopClientsChart() {
+    if (activeTab !== 'clients') return
+    const c = chartColors()
+    const clients = apiData?.clientsChart
+    if (!clients?.length) return
+    mkChart('topClientChart', {
+      type: 'bar',
+      data: {
+        labels: clients.map(x => x.client.substring(0, 16).toUpperCase()),
+        datasets: [
+          { label: 'Planned $K',  data: clients.map(x => x.planned),  backgroundColor: c.pA, borderRadius: 3 },
+          { label: 'Realized $K', data: clients.map(x => x.realized), backgroundColor: c.t,  borderRadius: 3 },
+        ],
+      },
+      options: { ...baseOpts(), scales: { ...baseOpts().scales, x: { ticks: { color: c.tx, font: { size: 10 }, maxRotation: 45 }, grid: { color: c.gr } }, y: { ticks: { color: c.tx, font: { size: 11 }, callback: v => '$' + v + 'K' }, grid: { color: c.gr } } } },
+    })
   }
 
   function toggleMU(mu) {
     setActiveMU(prev => prev === mu ? null : mu)
   }
 
-  const d = DATA[muView]
+  const d = apiData?.data?.[muView] || DATA[muView]
+  const CONTRACTS = apiData?.contracts || CONTRACTS_FALLBACK
 
   return (
     <div className="pw">
@@ -383,7 +426,7 @@ export default function Dashboard() {
           <p className="header-meta">FY26 Dashboard · Fiscal Year 2026</p>
         </div>
         <div className="hr">
-          <div className="dbadge">Data as of <b>30 Apr 2026</b></div>
+          <div className="dbadge">Data as of <b>{apiData?.config?.asOf || '30 Apr 2026'}</b></div>
           <div className="dbadge">Source: <b>MMD</b></div>
         </div>
       </header>
@@ -408,12 +451,12 @@ export default function Dashboard() {
               ))}
             </div>
           </div>
-          <div className="sh"><h2>{OV_DATA[ovView].adoptTitle.replace(/&amp;/g, '&')}</h2></div>
-          <div className="kg">{OV_DATA[ovView].adopt.map((k, i) => <KpiCard key={i} {...k} />)}</div>
+          <div className="sh"><h2>{(apiData?.ovData?.[ovView] || OV_DATA[ovView]).adoptTitle.replace(/&amp;/g, '&')}</h2></div>
+          <div className="kg">{(apiData?.ovData?.[ovView] || OV_DATA[ovView]).adopt.map((k, i) => <KpiCard key={i} {...k} />)}</div>
         </div>
         <div className="sec">
-          <div className="sh"><h2>{OV_DATA[ovView].savTitle.replace(/&amp;/g, '&')}</h2></div>
-          <div className="kg">{OV_DATA[ovView].sav.map((k, i) => <KpiCard key={i} {...k} />)}</div>
+          <div className="sh"><h2>{(apiData?.ovData?.[ovView] || OV_DATA[ovView]).savTitle.replace(/&amp;/g, '&')}</h2></div>
+          <div className="kg">{(apiData?.ovData?.[ovView] || OV_DATA[ovView]).sav.map((k, i) => <KpiCard key={i} {...k} />)}</div>
         </div>
         <div className="sec">
           <div className="sh"><h2>Adoption by Market Unit</h2></div>
@@ -431,9 +474,12 @@ export default function Dashboard() {
               <div className="cct">Contracts by status</div>
               <div className="cw" style={{ height: 190 }}><canvas id="statusDonut" /></div>
               <div style={{ marginTop: 12 }}>
-                {[['var(--teal)', 'Scaling', 36], ['var(--purple)', 'Work in Progress', 31], ['var(--gray)', 'Not Implementing', 15], ['var(--amber)', 'Yet to Start', 14]].map(([col, lbl, n]) => (
-                  <div className="dlr" key={lbl}><div className="dls" style={{ background: col }} /><span style={{ color: 'var(--text2)', flex: 1 }}>{lbl}</span><span style={{ fontFamily: 'DM Mono, monospace', color: 'var(--text3)' }}>{n}</span></div>
-                ))}
+                {(() => {
+                  const dn = apiData?.ovData?.[ovView]?.donut || [36, 31, 15, 14]
+                  return [['var(--teal)', 'Scaling', dn[0]], ['var(--purple)', 'Work in Progress', dn[1]], ['var(--gray)', 'Not Implementing', dn[2]], ['var(--amber)', 'Yet to Start', dn[3]]].map(([col, lbl, n]) => (
+                    <div className="dlr" key={lbl}><div className="dls" style={{ background: col }} /><span style={{ color: 'var(--text2)', flex: 1 }}>{lbl}</span><span style={{ fontFamily: 'DM Mono, monospace', color: 'var(--text3)' }}>{n}</span></div>
+                  ))
+                })()}
               </div>
             </div>
           </div>
@@ -441,14 +487,14 @@ export default function Dashboard() {
         <div className="sec">
           <div className="sh"><h2>Key Highlights</h2></div>
           <div className="hlg">
-            {[
+            {(apiData?.highlights || [
               { bg: 'var(--hl-t)', icon: '🚀', title: 'Scaling ahead of the curve', body: '31% of eligible contracts scaled, outperforming the Tech benchmark of 26%.' },
               { bg: 'var(--hl-p)', icon: '📈', title: 'Adoption at scale', body: '72% of APAC contracts live on GenAI / Agentic AI — ahead of the 55% Tech average.' },
               { bg: 'var(--hl-g)', icon: '⚡', title: 'Proven productivity impact', body: 'Average gains: 3.8% in AMS/IMS and 6.6% in SI engagements.' },
               { bg: 'var(--hl-a)', icon: '🏗️', title: 'AI Hub by design', body: 'Dedicated AI Hub of ~60 architects and engineers (currently 32, 40 by mid-May).' },
               { bg: 'var(--hl-p)', icon: '🌏', title: 'Pilots to scale', body: '34 AI success stories across 31 APAC clients — NBN, QBE, CLP Holdings, AMPOL, Singapore CPFB.' },
               { bg: 'var(--hl-t)', icon: '💰', title: 'GenERA outperformance', body: '$55.5M actuals vs $39M planned — 42% beat. FTE savings 57% above plan.' },
-            ].map(h => (
+            ]).map(h => (
               <div className="hlc" key={h.title}>
                 <div className="hli" style={{ background: h.bg }}>{h.icon}</div>
                 <div><div className="hlt">{h.title}</div><div className="hlb">{h.body}</div></div>
@@ -566,20 +612,23 @@ export default function Dashboard() {
             </div>
           </div>
           <div className="sb">
-            {[
-              ['var(--teal)', DATA[savView].stats.gera, 'GenERA Actuals'],
-              ['var(--purple)', DATA[savView].stats.gplan, 'GenERA Planned'],
-              ['var(--green)', DATA[savView].stats.beat, 'Beat vs Plan'],
-              ['var(--teal)', DATA[savView].stats.delact, 'GenAI Actuals'],
-              ['var(--amber)', DATA[savView].stats.delplan, 'GenAI Planned'],
-              ['var(--red)', DATA[savView].stats.att, 'Delivery Attainment'],
-            ].map(([col, val, lbl]) => (
-              <div className="si" key={lbl}><div className="sv" style={{ color: col }}>{val}</div><div className="sl">{lbl}</div></div>
-            ))}
+            {(() => {
+              const sv = apiData?.data?.[savView]?.stats || DATA[savView].stats
+              return [
+                ['var(--teal)',   sv.gera,    'GenERA Actuals'],
+                ['var(--purple)', sv.gplan,   'GenERA Planned'],
+                ['var(--green)',  sv.beat,    'Beat vs Plan'],
+                ['var(--teal)',   sv.delact,  'GenAI Actuals'],
+                ['var(--amber)',  sv.delplan, 'GenAI Planned'],
+                ['var(--red)',    sv.att,     'Delivery Attainment'],
+              ].map(([col, val, lbl]) => (
+                <div className="si" key={lbl}><div className="sv" style={{ color: col }}>{val}</div><div className="sl">{lbl}</div></div>
+              ))
+            })()}
           </div>
           <div className="cg2" style={{ marginBottom: 16 }}>
             <div className="cc">
-              <div className="cct">{DATA[savView].savC1Title}</div>
+              <div className="cct">{(apiData?.data?.[savView] || DATA[savView]).savC1Title}</div>
               <div className="leg">
                 <div className="li"><div className="ld" style={{ background: 'var(--teal)' }} />GenERA</div>
                 <div className="li"><div className="ld" style={{ background: 'var(--purple)' }} />GenAI</div>
@@ -587,7 +636,7 @@ export default function Dashboard() {
               <div className="cw" style={{ height: 240 }}><canvas id="savCompare" /></div>
             </div>
             <div className="cc">
-              <div className="cct">{DATA[savView].savC2Title}</div>
+              <div className="cct">{(apiData?.data?.[savView] || DATA[savView]).savC2Title}</div>
               <div className="leg">
                 <div className="li"><div className="ld" style={{ background: 'var(--amber)', opacity: .6 }} />Plan</div>
                 <div className="li"><div className="ld" style={{ background: 'var(--teal)' }} />Actuals</div>
@@ -596,7 +645,7 @@ export default function Dashboard() {
             </div>
           </div>
           <div className="cc">
-            <div className="cct">{DATA[savView].savC3Title}</div>
+            <div className="cct">{(apiData?.data?.[savView] || DATA[savView]).savC3Title}</div>
             <div className="leg">
               <div className="li"><div className="ld" style={{ background: 'var(--purple)', opacity: .55 }} />Planned</div>
               <div className="li"><div className="ld" style={{ background: 'var(--teal)' }} />Realized</div>
@@ -611,7 +660,7 @@ export default function Dashboard() {
         <div className="sec">
           <div className="sh"><h2>Top Clients with Highest Agentic AI Impact</h2></div>
           <div className="clg">
-            {[['QBE', 'ANZ · FS · AMS'], ['NBN', 'ANZ · CMT · AMS'], ['Coles Group', 'ANZ · PRD · AMS'], ['Rio Tinto', 'ANZ · RES · AMS'], ['Idemitsu', 'Japan · RES · AMS'], ['Standard Chartered', 'SEA · FS · SI'], ['MUFG', 'Japan · FS · AMS'], ['PTT Group', 'SEA · RES · SI'], ['HSBC', 'SEA · FS · AMS'], ['AMPOL', 'ANZ · RES · AMS'], ['CLP Holdings', 'GC · RES · SI'], ['Singapore CPFB', 'SEA · H&PS · IMS']].map(([name, meta]) => (
+            {(apiData?.topClients || [['QBE', 'ANZ · FS · AMS'], ['NBN', 'ANZ · CMT · AMS'], ['Coles Group', 'ANZ · PRD · AMS'], ['Rio Tinto', 'ANZ · RES · AMS'], ['Idemitsu', 'Japan · RES · AMS'], ['Standard Chartered', 'SEA · FS · SI'], ['MUFG', 'Japan · FS · AMS'], ['PTT Group', 'SEA · RES · SI'], ['HSBC', 'SEA · FS · AMS'], ['AMPOL', 'ANZ · RES · AMS'], ['CLP Holdings', 'GC · RES · SI'], ['Singapore CPFB', 'SEA · H&PS · IMS']]).map(([name, meta]) => (
               <div className="clc" key={name}><div className="cln">{name}</div><div className="clm">{meta}</div></div>
             ))}
           </div>
@@ -629,14 +678,14 @@ export default function Dashboard() {
         <div className="sec">
           <div className="sh"><h2>Productivity benchmarks</h2></div>
           <div className="kg">
-            {[
-              { c: 'ct', l: 'AMS/IMS Productivity', v: '3.8%', s: 'Average APAC AMS/IMS' },
-              { c: 'cp', l: 'SI Productivity', v: '6.6%', s: 'Average APAC SI' },
-              { c: 'cg', l: 'Maybank GHCP Story Pts', v: '+36%', s: 'Story points per hour' },
-              { c: 'ca', l: 'Maybank Unit Tests', v: '+59%', s: 'Test cases per hour' },
-              { c: 'ct', l: 'UBE RICEF FTE Saving', v: '7 FTE', s: '900 RICEF in 25 days' },
-              { c: 'cp', l: 'Highmark Use Cases', v: '18', s: '100% in production' },
-            ].map((k, i) => <KpiCard key={i} {...k} />)}
+            {(apiData?.benchmarks || [
+              { c: 'ct', l: 'AMS/IMS Productivity',  v: '3.8%',  s: 'Average APAC AMS/IMS' },
+              { c: 'cp', l: 'SI Productivity',        v: '6.6%',  s: 'Average APAC SI' },
+              { c: 'cg', l: 'Maybank GHCP Story Pts', v: '+36%',  s: 'Story points per hour' },
+              { c: 'ca', l: 'Maybank Unit Tests',     v: '+59%',  s: 'Test cases per hour' },
+              { c: 'ct', l: 'UBE RICEF FTE Saving',  v: '7 FTE', s: '900 RICEF in 25 days' },
+              { c: 'cp', l: 'Highmark Use Cases',     v: '18',    s: '100% in production' },
+            ]).map((k, i) => <KpiCard key={i} {...k} />)}
           </div>
         </div>
       </div>
