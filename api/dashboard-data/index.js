@@ -22,9 +22,12 @@ const XLSX = require('xlsx')
 
 const MU_ORDER = ['ANZ', 'India', 'Japan', 'SEA', 'GC']
 
-function rows(wb, sheetName) {
+function rows(wb, sheetName, required = true) {
   const ws = wb.Sheets[sheetName]
-  if (!ws) throw new Error(`Sheet "${sheetName}" not found in workbook`)
+  if (!ws) {
+    if (required) throw new Error(`Sheet "${sheetName}" not found in workbook`)
+    return []
+  }
   return XLSX.utils.sheet_to_json(ws, { defval: '' })
 }
 
@@ -177,21 +180,35 @@ function buildTopClients(wb) {
 }
 
 function buildConfig(wb) {
-  const result = {}
-  for (const r of rows(wb, 'Config')) result[r.key] = r.value
+  const result = { asOf: '30 Apr 2026' }
+  for (const r of rows(wb, 'Config', false)) result[r.key] = r.value
   return result
 }
 
 function buildHighlights(wb) {
-  return rows(wb, 'Highlights').map(r => ({
-    bg: r.bg, icon: r.icon, title: r.title, body: r.body,
-  }))
+  const sheet = rows(wb, 'Highlights', false)
+  if (sheet.length) return sheet.map(r => ({ bg: r.bg, icon: r.icon, title: r.title, body: r.body }))
+  return [
+    { bg:'var(--hl-t)', icon:'🚀', title:'Scaling ahead of the curve',  body:'31% of eligible contracts scaled, outperforming the Tech benchmark of 26%.' },
+    { bg:'var(--hl-p)', icon:'📈', title:'Adoption at scale',            body:'72% of APAC contracts live on GenAI / Agentic AI — ahead of the 55% Tech average.' },
+    { bg:'var(--hl-g)', icon:'⚡', title:'Proven productivity impact',   body:'Average gains: 3.8% in AMS/IMS and 6.6% in SI engagements.' },
+    { bg:'var(--hl-a)', icon:'🏗️', title:'AI Hub by design',            body:'Dedicated AI Hub of ~60 architects and engineers (currently 32, 40 by mid-May).' },
+    { bg:'var(--hl-p)', icon:'🌏', title:'Pilots to scale',              body:'34 AI success stories across 31 APAC clients — NBN, QBE, CLP Holdings, AMPOL, Singapore CPFB.' },
+    { bg:'var(--hl-t)', icon:'💰', title:'GenERA outperformance',        body:'$55.5M actuals vs $39M planned — 42% beat. FTE savings 57% above plan.' },
+  ]
 }
 
 function buildBenchmarks(wb) {
-  return rows(wb, 'Benchmarks').map(r => ({
-    c: r.c, l: r.l, v: r.v, s: r.s,
-  }))
+  const sheet = rows(wb, 'Benchmarks', false)
+  if (sheet.length) return sheet.map(r => ({ c: r.c, l: r.l, v: r.v, s: r.s }))
+  return [
+    { c:'ct', l:'AMS/IMS Productivity',   v:'3.8%',  s:'Average APAC AMS/IMS' },
+    { c:'cp', l:'SI Productivity',        v:'6.6%',  s:'Average APAC SI' },
+    { c:'cg', l:'Maybank GHCP Story Pts', v:'+36%',  s:'Story points per hour' },
+    { c:'ca', l:'Maybank Unit Tests',     v:'+59%',  s:'Test cases per hour' },
+    { c:'ct', l:'UBE RICEF FTE Saving',   v:'7 FTE', s:'900 RICEF in 25 days' },
+    { c:'cp', l:'Highmark Use Cases',     v:'18',    s:'100% in production' },
+  ]
 }
 
 async function streamToBuffer(stream) {
