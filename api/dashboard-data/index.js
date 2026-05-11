@@ -47,17 +47,19 @@ function parseContracts(wb) {
   for (const r of sheetJson(wb, 'MMD Export')) {
     const mu = normMU(r['MarketUnit'])
     if (!MU_ORDER.includes(mu)) continue
-    const isAtci = String(r['ATCI'] || '').trim().toUpperCase() === 'Y'
+    const isEligible = String(r['GenAI Eligible'] || '').trim().toUpperCase() === 'YES'
+    const isAtci     = String(r['ATCI']           || '').trim().toUpperCase() === 'Y'
     const contract = {
-      client:    String(r['Client']   || '').trim() || '—',
-      dsg:       String(r['DSG']      || '').trim() || '—',
-      industry:  String(r['Industry'] || '').trim() || '—',
-      status:    String(r['Progress'] || '').trim() || '—',
-      step5:     String(r['(Step 5) Scaled production implementation started'] || '').trim(),
-      uc:        num(r['#UseCases Implementation in Contract']),
-      genAIPlan: fmtK(num(r['Planned Savings ($K)'])),
-      genAIAct:  fmtK(num(r['Realized Savings ($K)'])),
-      tooling:   String(r['Tooling']  || '').trim() || '—',
+      client:      String(r['Client']   || '').trim() || '—',
+      dsg:         String(r['DSG']      || '').trim() || '—',
+      industry:    String(r['Industry'] || '').trim() || '—',
+      status:      String(r['Progress'] || '').trim() || '—',
+      step5:       String(r['(Step 5) Scaled production implementation started'] || '').trim(),
+      uc:          num(r['#UseCases Implementation in Contract']),
+      genAIPlan:   fmtK(num(r['Planned Savings ($K)'])),
+      genAIAct:    fmtK(num(r['Realized Savings ($K)'])),
+      tooling:     String(r['Tooling']  || '').trim() || '—',
+      isEligible,
     }
     if (!out.apac[mu]) out.apac[mu] = { stats: null, contracts: [] }
     out.apac[mu].contracts.push(contract)
@@ -69,22 +71,23 @@ function parseContracts(wb) {
   const EXCLUDE = new Set(['Not Implementing', 'Yet to Start', 'Initiated', '—', ''])
   for (const view of ['apac', 'atci']) {
     for (const mu of Object.keys(out[view])) {
-      const cs = out[view][mu].contracts
-      const adopted  = cs.filter(c => !EXCLUDE.has(c.status)).length
-      const scaling  = cs.filter(c => c.step5 === 'Scaling').length
+      const cs  = out[view][mu].contracts
+      const elig = cs.filter(c => c.isEligible)
+      const adopted = elig.filter(c => !EXCLUDE.has(c.status)).length
+      const scaling = elig.filter(c => c.step5 === 'Scaling').length
       out[view][mu].stats = {
-        eligible: cs.length, adopted, scaling,
-        wip:     cs.filter(c => c.status === 'Work in Progress').length,
-        ni:      cs.filter(c => c.status === 'Not Implementing').length,
-        adopPct: cs.length ? Math.round(adopted  / cs.length * 100) + '%' : '0%',
-        scalPct: cs.length ? Math.round(scaling  / cs.length * 100) + '%' : '0%',
+        eligible: elig.length, adopted, scaling,
+        wip:     elig.filter(c => c.status === 'Work in Progress').length,
+        ni:      elig.filter(c => c.status === 'Not Implementing').length,
+        adopPct: elig.length ? Math.round(adopted / elig.length * 100) + '%' : '0%',
+        scalPct: elig.length ? Math.round(scaling / elig.length * 100) + '%' : '0%',
       }
     }
   }
   return out
 }
 
-// ── Parse GenERA Export for savings by MU/view ───────────────────
+// ── Parse GenERA Export (+ Miss MMD sheet) for savings by MU/view ─
 function parseGenERA(wb) {
   const result = { apac: {}, atci: {} }
   function add(target, mu, r) {
@@ -96,11 +99,15 @@ function parseGenERA(wb) {
     target[mu].genAIPlanK += num(r['$ GenAI Planned Productivity ($K)'])
     target[mu].genAIActK  += num(r['$ GenAI Realized Productivity ($K)'])
   }
-  for (const r of sheetJson(wb, 'GenERA Export')) {
-    const mu = normMU(r['Market Unit'])
-    if (!MU_ORDER.includes(mu)) continue
-    add(result.apac, mu, r)
-    if (String(r['ATCI'] || '').trim().toUpperCase() === 'Y') add(result.atci, mu, r)
+  // Both sheets have identical column structure
+  const sheets = ['GenERA Export', 'GenAI savings(Miss MMD Extract)']
+  for (const sheetName of sheets) {
+    for (const r of sheetJson(wb, sheetName)) {
+      const mu = normMU(r['Market Unit'])
+      if (!MU_ORDER.includes(mu)) continue
+      add(result.apac, mu, r)
+      if (String(r['ATCI'] || '').trim().toUpperCase() === 'Y') add(result.atci, mu, r)
+    }
   }
   return result
 }
@@ -256,12 +263,14 @@ function buildOvData(contracts, geraByMU) {
 // ── Client savings chart (top 15 by realized) ────────────────────
 function buildClientsChart(wb) {
   const byClient = {}
-  for (const r of sheetJson(wb, 'GenERA Export')) {
-    const client = String(r['Client'] || '').trim()
-    if (!client) continue
-    if (!byClient[client]) byClient[client] = { planned: 0, realized: 0 }
-    byClient[client].planned  += num(r['$ Planned Productivity (CCI Impact + Client Benefit) ($K)'])
-    byClient[client].realized += num(r['$ Realized Productivity (CCI Impact + Client Benefit) ($K)'])
+  for (const sheet of ['GenERA Export', 'GenAI savings(Miss MMD Extract)']) {
+    for (const r of sheetJson(wb, sheet)) {
+      const client = String(r['Client'] || '').trim()
+      if (!client) continue
+      if (!byClient[client]) byClient[client] = { planned: 0, realized: 0 }
+      byClient[client].planned  += num(r['$ Planned Productivity (CCI Impact + Client Benefit) ($K)'])
+      byClient[client].realized += num(r['$ Realized Productivity (CCI Impact + Client Benefit) ($K)'])
+    }
   }
   return Object.entries(byClient)
     .map(([client, d]) => ({ client, planned: Math.round(d.planned*10)/10, realized: Math.round(d.realized*10)/10 }))
@@ -272,13 +281,15 @@ function buildClientsChart(wb) {
 
 function buildTopClients(wb) {
   const byClient = {}
-  for (const r of sheetJson(wb, 'GenERA Export')) {
-    const client = String(r['Client'] || '').trim()
-    if (!client) continue
-    const mu = normMU(r['Market Unit'])
-    const dsg = String(r['DSG'] || '').trim()
-    if (!byClient[client]) byClient[client] = { mu, dsg, realized: 0 }
-    byClient[client].realized += num(r['$ Realized Productivity (CCI Impact + Client Benefit) ($K)'])
+  for (const sheet of ['GenERA Export', 'GenAI savings(Miss MMD Extract)']) {
+    for (const r of sheetJson(wb, sheet)) {
+      const client = String(r['Client'] || '').trim()
+      if (!client) continue
+      const mu  = normMU(r['Market Unit'])
+      const dsg = String(r['DSG'] || '').trim()
+      if (!byClient[client]) byClient[client] = { mu, dsg, realized: 0 }
+      byClient[client].realized += num(r['$ Realized Productivity (CCI Impact + Client Benefit) ($K)'])
+    }
   }
   return Object.entries(byClient)
     .sort((a, b) => b[1].realized - a[1].realized)
