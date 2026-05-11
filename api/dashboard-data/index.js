@@ -253,10 +253,31 @@ module.exports = async function (context, req) {
     }
   } catch (err) {
     context.log.error('dashboard-data:', err.message)
+
+    // Return sheet structure to help diagnose mapping issues
+    let sheetDiag = null
+    try {
+      const connStr = process.env.AZURE_STORAGE_CONNECTION_STRING
+      if (connStr) {
+        const blobClient = BlobServiceClient
+          .fromConnectionString(connStr)
+          .getContainerClient(process.env.STORAGE_CONTAINER || 'dashboard')
+          .getBlobClient(process.env.EXCEL_BLOB_NAME || 'dashboard-data.xlsx')
+        const download = await blobClient.download(0)
+        const buffer = await streamToBuffer(download.readableStreamBody)
+        const wb = XLSX.read(buffer, { type: 'buffer' })
+        sheetDiag = {}
+        for (const name of wb.SheetNames) {
+          const r = XLSX.utils.sheet_to_json(wb.Sheets[name], { header: 1 })
+          sheetDiag[name] = r[0] || []
+        }
+      }
+    } catch (_) {}
+
     context.res = {
       status: 500,
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ error: err.message }),
+      body: JSON.stringify({ error: err.message, sheets: sheetDiag }),
     }
   }
 }
