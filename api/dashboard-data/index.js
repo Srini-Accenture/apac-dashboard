@@ -25,7 +25,7 @@ const MU_ORDER = ['ANZ', 'India', 'Japan', 'SEA', 'GC']
 function rows(wb, sheetName, required = true) {
   const ws = wb.Sheets[sheetName]
   if (!ws) {
-    if (required) throw new Error(`Sheet "${sheetName}" not found in workbook`)
+    if (required) throw new Error(`Sheet "${sheetName}" not found. Available sheets: ${wb.SheetNames.join(', ')}`)
     return []
   }
   return XLSX.utils.sheet_to_json(ws, { defval: '' })
