@@ -139,11 +139,11 @@ function KpiCard({ c, l, v, s, d, du }) {
   )
 }
 
-function DrillPanel({ mu, view, onClose }) {
+function DrillPanel({ mu, view, contractsData, onClose }) {
   const [sort, setSort] = useState({ col: 'status', dir: 'asc' })
   const scrollRef = useRef(null)
 
-  const data = CONTRACTS[view][mu]
+  const data = contractsData?.[view]?.[mu]
   if (!data) return null
   const { stats, contracts } = data
 
@@ -411,7 +411,6 @@ export default function Dashboard() {
   }
 
   const d = apiData?.data?.[muView] || DATA[muView]
-  const CONTRACTS = apiData?.contracts || CONTRACTS_FALLBACK
 
   return (
     <div className="pw">
@@ -573,7 +572,7 @@ export default function Dashboard() {
           </div>
 
           {activeMU && (
-            <DrillPanel mu={activeMU} view={muView} onClose={() => setActiveMU(null)} />
+            <DrillPanel mu={activeMU} view={muView} contractsData={apiData?.contracts || CONTRACTS_FALLBACK} onClose={() => setActiveMU(null)} />
           )}
 
           <div className="sec" style={{ marginTop: 20 }}>
