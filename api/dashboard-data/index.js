@@ -3,30 +3,21 @@ const XLSX = require('xlsx')
 
 // ── Excel sheet structure expected ───────────────────────────────
 //
-// Sheet: KPI_Cards
-//   view(apac|atci), section(adopt|sav), c, l, v, s, d, du(TRUE|FALSE)
-//
-// Sheet: Banners   (one row per view)
-//   view, adoptTitle, savTitle,
-//   bannerTitle, bannerSub, bannerAdopt, bannerScale, bannerSav, bannerFte,
-//   tableTitle, chartsTitle, savChartTitle, fteChartTitle,
-//   statsGera, statsGplan, statsBeat, statsDelact, statsDelplan, statsAtt,
-//   savC1, savC2, savC3,
-//   donutSc, donutWip, donutNi, donutYts
-//
-// Sheet: MU_Rows   (one row per MU per view, MU order: ANZ,India,Japan,SEA,GC)
-//   view, mu, eligible, adopt, adoptColor, scale,
-//   delPlan, delAct, geraPlan, geraAct, geraActColor,
-//   ftePlan, fteAct, delta, dClass, dColor
-//
-// Sheet: Contracts
-//   view, mu, client, dsg, industry, status, step5, uc, genAIPlan, genAIAct, tooling
-//
-// Sheet: Clients_Chart   (APAC top clients bar chart)
-//   client, planned, realized
-//
-// Sheet: Top_Clients
-//   name, meta
+// Sheet: Config        key, value  (e.g. asOf → "30 Apr 2026")
+// Sheet: KPI_Cards     view, section, c, l, v, s, d, du
+// Sheet: Banners       view, adoptTitle, savTitle, bannerTitle, bannerSub,
+//                      bannerAdopt, bannerScale, bannerSav, bannerFte,
+//                      tableTitle, chartsTitle, savChartTitle, fteChartTitle,
+//                      statsGera, statsGplan, statsBeat, statsDelact, statsDelplan, statsAtt,
+//                      savC1, savC2, savC3, donutSc, donutWip, donutNi, donutYts
+// Sheet: Highlights    bg, icon, title, body
+// Sheet: Benchmarks    c, l, v, s
+// Sheet: MU_Rows       view, mu, eligible, adopt, adoptColor, scale,
+//                      delPlan, delAct, geraPlan, geraAct, geraActColor,
+//                      ftePlan, fteAct, delta, dClass, dColor
+// Sheet: Contracts     view, mu, client, dsg, industry, status, step5, uc, genAIPlan, genAIAct, tooling
+// Sheet: Clients_Chart client, planned, realized
+// Sheet: Top_Clients   name, meta
 // ─────────────────────────────────────────────────────────────────
 
 const MU_ORDER = ['ANZ', 'India', 'Japan', 'SEA', 'GC']
@@ -185,6 +176,24 @@ function buildTopClients(wb) {
   return rows(wb, 'Top_Clients').map(r => [r.name, r.meta])
 }
 
+function buildConfig(wb) {
+  const result = {}
+  for (const r of rows(wb, 'Config')) result[r.key] = r.value
+  return result
+}
+
+function buildHighlights(wb) {
+  return rows(wb, 'Highlights').map(r => ({
+    bg: r.bg, icon: r.icon, title: r.title, body: r.body,
+  }))
+}
+
+function buildBenchmarks(wb) {
+  return rows(wb, 'Benchmarks').map(r => ({
+    c: r.c, l: r.l, v: r.v, s: r.s,
+  }))
+}
+
 async function streamToBuffer(stream) {
   return new Promise((resolve, reject) => {
     const chunks = []
@@ -215,11 +224,14 @@ module.exports = async function (context, req) {
       status: 200,
       headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-cache' },
       body: JSON.stringify({
+        config: buildConfig(wb),
         ovData: buildOvData(wb),
         data: buildData(wb),
         contracts: buildContracts(wb),
         clientsChart: buildClientsChart(wb),
         topClients: buildTopClients(wb),
+        highlights: buildHighlights(wb),
+        benchmarks: buildBenchmarks(wb),
       }),
     }
   } catch (err) {

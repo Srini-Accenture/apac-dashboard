@@ -1,7 +1,9 @@
 // Run from project root: npm run generate-excel
-// Output: dashboard-data.xlsx  → upload this to Azure Blob Storage
+// Output: dashboard-data.xlsx  → upload to Azure Blob Storage
+//         dashboard-data.json  → used by local dev server (npm run dev)
 
 const XLSX = require('xlsx')
+const fs   = require('fs')
 const path = require('path')
 const contracts = require('../src/data/contracts.json')
 
@@ -128,6 +130,31 @@ const topClients = [
   { name:'Singapore CPFB',    meta:'SEA · H&PS · IMS'   },
 ]
 
+// ── Sheet: Config ────────────────────────────────────────────────
+const config = [
+  { key: 'asOf', value: '30 Apr 2026' },
+]
+
+// ── Sheet: Highlights ────────────────────────────────────────────
+const highlights = [
+  { bg:'var(--hl-t)', icon:'🚀', title:'Scaling ahead of the curve',   body:'31% of eligible contracts scaled, outperforming the Tech benchmark of 26%.' },
+  { bg:'var(--hl-p)', icon:'📈', title:'Adoption at scale',             body:'72% of APAC contracts live on GenAI / Agentic AI — ahead of the 55% Tech average.' },
+  { bg:'var(--hl-g)', icon:'⚡', title:'Proven productivity impact',    body:'Average gains: 3.8% in AMS/IMS and 6.6% in SI engagements.' },
+  { bg:'var(--hl-a)', icon:'🏗️', title:'AI Hub by design',             body:'Dedicated AI Hub of ~60 architects and engineers (currently 32, 40 by mid-May).' },
+  { bg:'var(--hl-p)', icon:'🌏', title:'Pilots to scale',               body:'34 AI success stories across 31 APAC clients — NBN, QBE, CLP Holdings, AMPOL, Singapore CPFB.' },
+  { bg:'var(--hl-t)', icon:'💰', title:'GenERA outperformance',         body:'$55.5M actuals vs $39M planned — 42% beat. FTE savings 57% above plan.' },
+]
+
+// ── Sheet: Benchmarks ────────────────────────────────────────────
+const benchmarks = [
+  { c:'ct', l:'AMS/IMS Productivity',    v:'3.8%',  s:'Average APAC AMS/IMS'    },
+  { c:'cp', l:'SI Productivity',         v:'6.6%',  s:'Average APAC SI'          },
+  { c:'cg', l:'Maybank GHCP Story Pts',  v:'+36%',  s:'Story points per hour'    },
+  { c:'ca', l:'Maybank Unit Tests',      v:'+59%',  s:'Test cases per hour'      },
+  { c:'ct', l:'UBE RICEF FTE Saving',    v:'7 FTE', s:'900 RICEF in 25 days'    },
+  { c:'cp', l:'Highmark Use Cases',      v:'18',    s:'100% in production'       },
+]
+
 // ── Sheet: Contracts (from contracts.json) ───────────────────────
 const contractRows = []
 for (const [view, muData] of Object.entries(contracts)) {
@@ -157,14 +184,103 @@ function addSheet(name, data) {
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(data), name)
 }
 
+addSheet('Config',       config)
 addSheet('KPI_Cards',    kpiCards)
 addSheet('Banners',      banners)
+addSheet('Highlights',   highlights)
+addSheet('Benchmarks',   benchmarks)
 addSheet('MU_Rows',      muRows)
 addSheet('Contracts',    contractRows)
 addSheet('Clients_Chart',clientsChart)
 addSheet('Top_Clients',  topClients)
 
-const out = path.join(__dirname, '..', 'dashboard-data.xlsx')
-XLSX.writeFile(wb, out)
-console.log('Generated:', out)
-console.log('Upload this file to your Azure Blob Storage container.')
+// ── Write Excel ───────────────────────────────────────────────────
+const xlsxOut = path.join(__dirname, '..', 'dashboard-data.xlsx')
+XLSX.writeFile(wb, xlsxOut)
+console.log('Generated:', xlsxOut)
+
+// ── Write JSON (mirrors what the Azure Function returns) ──────────
+const MU_ORDER = ['ANZ', 'India', 'Japan', 'SEA', 'GC']
+
+function num(v) {
+  return parseFloat(String(v).replace(/[^0-9.-]/g, '')) || 0
+}
+
+// config
+const configObj = Object.fromEntries(config.map(r => [r.key, r.value]))
+
+// ovData
+const ovData = {}
+for (const b of banners) {
+  const v = b.view.toLowerCase()
+  ovData[v] = {
+    adoptTitle: b.adoptTitle, savTitle: b.savTitle,
+    donut: [b.donutSc, b.donutWip, b.donutNi, b.donutYts],
+    adopt: [], sav: [],
+  }
+}
+for (const r of kpiCards) {
+  const v = r.view.toLowerCase(), sec = r.section.toLowerCase()
+  const card = { c: r.c, l: r.l, v: r.v, s: r.s, du: r.du }
+  if (r.d) card.d = r.d
+  ovData[v][sec].push(card)
+}
+
+// data
+const data = {}
+for (const b of banners) {
+  const v = b.view.toLowerCase()
+  data[v] = {
+    banner: { title: b.bannerTitle, sub: b.bannerSub, adopt: b.bannerAdopt, scale: b.bannerScale, gensav: b.bannerSav, fte: b.bannerFte },
+    tableTitle: b.tableTitle, chartsTitle: b.chartsTitle,
+    savChartTitle: b.savChartTitle, fteChartTitle: b.fteChartTitle,
+    stats: { gera: b.statsGera, gplan: b.statsGplan, beat: b.statsBeat, delact: b.statsDelact, delplan: b.statsDelplan, att: b.statsAtt },
+    savC1Title: b.savC1, savC2Title: b.savC2, savC3Title: b.savC3,
+    rows: [], savPlan: [], savActuals: [], ftePlan: [], fteActuals: [], delActuals: [],
+  }
+}
+for (const mu of MU_ORDER) {
+  for (const r of muRows) {
+    if (r.mu !== mu) continue
+    const v = r.view.toLowerCase()
+    data[v].rows.push({ mu: r.mu, eligible: r.eligible, adopt: r.adopt, adoptColor: r.adoptColor, scale: r.scale, delPlan: r.delPlan, delAct: r.delAct, geraPlan: r.geraPlan, geraAct: r.geraAct, geraActColor: r.geraActColor, ftePlan: r.ftePlan, fteAct: r.fteAct, delta: r.delta, dClass: r.dClass, dColor: r.dColor })
+    data[v].savPlan.push(num(r.geraPlan))
+    data[v].savActuals.push(num(r.geraAct))
+    data[v].ftePlan.push(num(r.ftePlan))
+    data[v].fteActuals.push(num(r.fteAct))
+    data[v].delActuals.push(num(r.delAct))
+  }
+}
+
+// contracts
+const contractsObj = {}
+for (const r of contractRows) {
+  const v = r.view.toLowerCase(), mu = r.mu
+  if (!contractsObj[v]) contractsObj[v] = {}
+  if (!contractsObj[v][mu]) contractsObj[v][mu] = { stats: null, contracts: [] }
+  contractsObj[v][mu].contracts.push({ client: r.client, dsg: r.dsg, industry: r.industry, status: r.status, step5: r.step5, uc: r.uc, genAIPlan: r.genAIPlan, genAIAct: r.genAIAct, tooling: r.tooling })
+}
+for (const v of Object.keys(contractsObj)) {
+  for (const mu of Object.keys(contractsObj[v])) {
+    const cs = contractsObj[v][mu].contracts
+    const adopted = cs.filter(c => !['Not Implementing','Yet to Start','Initiated'].includes(c.status)).length
+    const scaling = cs.filter(c => c.status === 'Scaling').length
+    contractsObj[v][mu].stats = { eligible: cs.length, adopted, scaling, wip: cs.filter(c => c.status === 'Work in Progress').length, ni: cs.filter(c => c.status === 'Not Implementing').length, adopPct: cs.length ? Math.round(adopted/cs.length*100)+'%' : '0%', scalPct: cs.length ? Math.round(scaling/cs.length*100)+'%' : '0%' }
+  }
+}
+
+const jsonPayload = {
+  config: configObj,
+  ovData,
+  data,
+  contracts: contractsObj,
+  clientsChart,
+  topClients: topClients.map(r => [r.name, r.meta]),
+  highlights,
+  benchmarks,
+}
+
+const jsonOut = path.join(__dirname, '..', 'dashboard-data.json')
+fs.writeFileSync(jsonOut, JSON.stringify(jsonPayload, null, 2))
+console.log('Generated:', jsonOut)
+console.log('Upload the .xlsx to Azure Blob Storage. The .json is used by npm run dev.')

@@ -205,7 +205,9 @@ export default function Dashboard() {
 
   useEffect(() => { if (dashData) setTimeout(buildOverviewCharts, 50) }, [ovView, theme, activeTab, dashData])
   useEffect(() => { if (dashData) setTimeout(buildMUCharts, 50) }, [muView, theme, activeTab, dashData])
-  useEffect(() => { if (dashData) setTimeout(() => { buildSavCharts(); buildClientsChart() }, 50) }, [savView, theme, activeTab, dashData])
+  useEffect(() => { if (dashData) setTimeout(buildSavCharts, 50) }, [savView, theme, activeTab, dashData])
+  useEffect(() => { if (dashData) setTimeout(buildClientsChart, 50) }, [savView, theme, activeTab, dashData])
+  useEffect(() => { if (dashData && activeTab === 'clients') setTimeout(buildTopClientsChart, 50) }, [theme, activeTab, dashData])
 
   function mkChart(id, cfg) {
     const el = document.getElementById(id)
@@ -274,6 +276,11 @@ export default function Dashboard() {
     })
   }
 
+  function clientChartOpts() {
+    const c = chartColors()
+    return { ...baseOpts(), scales: { ...baseOpts().scales, x: { ticks: { color: c.tx, font: { size: 10 }, maxRotation: 40 }, grid: { color: c.gr } }, y: { ticks: { color: c.tx, font: { size: 11 }, callback: v => '$' + v + 'K' }, grid: { color: c.gr } } } }
+  }
+
   function buildClientsChart() {
     if (!dashData) return
     const c = chartColors()
@@ -288,18 +295,7 @@ export default function Dashboard() {
             { label: 'Realized $K', data: cc.map(r => r.realized), backgroundColor: c.t, borderRadius: 3 },
           ],
         },
-        options: { ...baseOpts(), scales: { ...baseOpts().scales, x: { ticks: { color: chartColors().tx, font: { size: 10 }, maxRotation: 40 }, grid: { color: chartColors().gr } }, y: { ticks: { color: chartColors().tx, font: { size: 11 }, callback: v => '$' + v + 'K' }, grid: { color: chartColors().gr } } } },
-      })
-      mkChart('topClientChart', {
-        type: 'bar',
-        data: {
-          labels: cc.map(r => r.client),
-          datasets: [
-            { label: 'Planned $K', data: cc.map(r => r.planned), backgroundColor: c.pA, borderRadius: 3 },
-            { label: 'Realized $K', data: cc.map(r => r.realized), backgroundColor: c.t, borderRadius: 3 },
-          ],
-        },
-        options: { ...baseOpts(), scales: { ...baseOpts().scales, x: { ticks: { color: chartColors().tx, font: { size: 10 }, maxRotation: 40 }, grid: { color: chartColors().gr } }, y: { ticks: { color: chartColors().tx, font: { size: 11 }, callback: v => '$' + v + 'K' }, grid: { color: chartColors().gr } } } },
+        options: clientChartOpts(),
       })
     } else {
       const d = dashData.data.atci
@@ -309,6 +305,22 @@ export default function Dashboard() {
         options: baseOpts(v => '$' + v + 'M'),
       })
     }
+  }
+
+  function buildTopClientsChart() {
+    if (!dashData) return
+    const c = chartColors(), cc = dashData.clientsChart
+    mkChart('topClientChart', {
+      type: 'bar',
+      data: {
+        labels: cc.map(r => r.client),
+        datasets: [
+          { label: 'Planned $K', data: cc.map(r => r.planned), backgroundColor: c.pA, borderRadius: 3 },
+          { label: 'Realized $K', data: cc.map(r => r.realized), backgroundColor: c.t, borderRadius: 3 },
+        ],
+      },
+      options: clientChartOpts(),
+    })
   }
 
   function toggleMU(mu) {
@@ -347,7 +359,7 @@ export default function Dashboard() {
           <p className="header-meta">FY26 Dashboard · Fiscal Year 2026</p>
         </div>
         <div className="hr">
-          <div className="dbadge">Data as of <b>30 Apr 2026</b></div>
+          <div className="dbadge">Data as of <b>{dashData.config.asOf}</b></div>
           <div className="dbadge">Source: <b>MMD</b></div>
           <button className="ttheme" onClick={() => setTheme(t => t === 'dark' ? 'light' : 'dark')}>
             <span className="isun">☀️</span>
@@ -410,14 +422,7 @@ export default function Dashboard() {
         <div className="sec">
           <div className="sh"><h2>Key Highlights</h2></div>
           <div className="hlg">
-            {[
-              { bg: 'var(--hl-t)', icon: '🚀', title: 'Scaling ahead of the curve', body: '31% of eligible contracts scaled, outperforming the Tech benchmark of 26%.' },
-              { bg: 'var(--hl-p)', icon: '📈', title: 'Adoption at scale', body: '72% of APAC contracts live on GenAI / Agentic AI — ahead of the 55% Tech average.' },
-              { bg: 'var(--hl-g)', icon: '⚡', title: 'Proven productivity impact', body: 'Average gains: 3.8% in AMS/IMS and 6.6% in SI engagements.' },
-              { bg: 'var(--hl-a)', icon: '🏗️', title: 'AI Hub by design', body: 'Dedicated AI Hub of ~60 architects and engineers (currently 32, 40 by mid-May).' },
-              { bg: 'var(--hl-p)', icon: '🌏', title: 'Pilots to scale', body: '34 AI success stories across 31 APAC clients — NBN, QBE, CLP Holdings, AMPOL, Singapore CPFB.' },
-              { bg: 'var(--hl-t)', icon: '💰', title: 'GenERA outperformance', body: '$55.5M actuals vs $39M planned — 42% beat. FTE savings 57% above plan.' },
-            ].map(h => (
+            {dashData.highlights.map(h => (
               <div className="hlc" key={h.title}>
                 <div className="hli" style={{ background: h.bg }}>{h.icon}</div>
                 <div><div className="hlt">{h.title}</div><div className="hlb">{h.body}</div></div>
@@ -598,14 +603,7 @@ export default function Dashboard() {
         <div className="sec">
           <div className="sh"><h2>Productivity benchmarks</h2></div>
           <div className="kg">
-            {[
-              { c: 'ct', l: 'AMS/IMS Productivity', v: '3.8%', s: 'Average APAC AMS/IMS' },
-              { c: 'cp', l: 'SI Productivity', v: '6.6%', s: 'Average APAC SI' },
-              { c: 'cg', l: 'Maybank GHCP Story Pts', v: '+36%', s: 'Story points per hour' },
-              { c: 'ca', l: 'Maybank Unit Tests', v: '+59%', s: 'Test cases per hour' },
-              { c: 'ct', l: 'UBE RICEF FTE Saving', v: '7 FTE', s: '900 RICEF in 25 days' },
-              { c: 'cp', l: 'Highmark Use Cases', v: '18', s: '100% in production' },
-            ].map((k, i) => <KpiCard key={i} {...k} />)}
+            {dashData.benchmarks.map((k, i) => <KpiCard key={i} {...k} />)}
           </div>
         </div>
       </div>
