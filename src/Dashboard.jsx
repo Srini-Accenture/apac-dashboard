@@ -178,7 +178,6 @@ function DrillPanel({ mu, view, contracts, onClose }) {
 }
 
 export default function Dashboard() {
-  const [theme, setTheme] = useState('dark')
   const [activeTab, setActiveTab] = useState('overview')
   const [ovView, setOvView] = useState('apac')
   const [muView, setMuView] = useState('apac')
@@ -199,15 +198,13 @@ export default function Dashboard() {
       .catch(e => { setError(e.message); setLoading(false) })
   }, [])
 
-  useEffect(() => {
-    document.documentElement.dataset.theme = theme
-  }, [theme])
+  useEffect(() => { document.documentElement.dataset.theme = 'light' }, [])
 
-  useEffect(() => { if (dashData) setTimeout(buildOverviewCharts, 50) }, [ovView, theme, activeTab, dashData])
-  useEffect(() => { if (dashData) setTimeout(buildMUCharts, 50) }, [muView, theme, activeTab, dashData])
-  useEffect(() => { if (dashData) setTimeout(buildSavCharts, 50) }, [savView, theme, activeTab, dashData])
-  useEffect(() => { if (dashData) setTimeout(buildClientsChart, 50) }, [savView, theme, activeTab, dashData])
-  useEffect(() => { if (dashData && activeTab === 'clients') setTimeout(buildTopClientsChart, 50) }, [theme, activeTab, dashData])
+  useEffect(() => { if (dashData) setTimeout(buildOverviewCharts, 50) }, [ovView, activeTab, dashData])
+  useEffect(() => { if (dashData) setTimeout(buildMUCharts, 50) }, [muView, activeTab, dashData])
+  useEffect(() => { if (dashData) setTimeout(buildSavCharts, 50) }, [savView, activeTab, dashData])
+  useEffect(() => { if (dashData) setTimeout(buildClientsChart, 50) }, [savView, activeTab, dashData])
+  useEffect(() => { if (dashData && activeTab === 'clients') setTimeout(buildTopClientsChart, 50) }, [activeTab, dashData])
 
   function mkChart(id, cfg) {
     const el = document.getElementById(id)
@@ -361,11 +358,6 @@ export default function Dashboard() {
         <div className="hr">
           <div className="dbadge">Data as of <b>{dashData.config.asOf}</b></div>
           <div className="dbadge">Source: <b>MMD</b></div>
-          <button className="ttheme" onClick={() => setTheme(t => t === 'dark' ? 'light' : 'dark')}>
-            <span className="isun">☀️</span>
-            <div className="tt"><div className="tk" /></div>
-            <span className="imoon">🌙</span>
-          </button>
         </div>
       </header>
 
